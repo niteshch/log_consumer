@@ -40,7 +40,7 @@
 ###    For a full description of the license, please visit
 ###    http://www.gnu.org/licenses/gpl.txt
 ###
-
+import asyncio
 import os
 import sys
 import optparse
@@ -58,7 +58,6 @@ from math import floor
 from logster.logster_helper import LogsterParsingException, LockingError, LogsterOutput
 from logster.tailers.logtailtailer import LogtailTailer
 from logster.outputs.builtin import builtin_outputs
-
 
 # Globals
 log_dir = "/var/log/logster"
@@ -114,36 +113,41 @@ script_start_time = time()
 
 # Command-line options and parsing.
 cmdline = optparse.OptionParser(usage="usage: %prog [options] parser logfile",
-    description="Tail a log file and filter each line to generate metrics that can be sent to common monitoring packages.")
+                                description="Tail a log file and filter each line to generate metrics that can be sent to common monitoring packages.")
 cmdline.add_option('--tailer', '-t', action='store', default='logtail',
-                    choices=('logtail', 'pygtail'), help='Specify which tailer to use. Options are logtail and pygtail. Default is \"%default\".')
+                   choices=('logtail', 'pygtail'),
+                   help='Specify which tailer to use. Options are logtail and pygtail. Default is \"%default\".')
 cmdline.add_option('--locker', action='store', default='fcntl',
-                    choices=('fcntl', 'portalocker'), help='Specify which file locker to use. Options are fcntl and portalocker. Default is \"%default\".')
+                   choices=('fcntl', 'portalocker'),
+                   help='Specify which file locker to use. Options are fcntl and portalocker. Default is \"%default\".')
 cmdline.add_option('--logtail', action='store', default=LogtailTailer.default_logtail_path,
-                    help='Specify location of logtail. Default \"%default\"')
+                   help='Specify location of logtail. Default \"%default\"')
 cmdline.add_option('--metric-prefix', '-p', action='store',
-                    help='Add prefix to all published metrics. This is for people that may multiple instances of same service on same host.',
-                    default='')
+                   help='Add prefix to all published metrics. This is for people that may multiple instances of same service on same host.',
+                   default='')
 cmdline.add_option('--metric-suffix', '-x', action='store',
-                    help='Add suffix to all published metrics. This is for people that may add suffix at the end of their metrics.',
-                    default=None)
+                   help='Add suffix to all published metrics. This is for people that may add suffix at the end of their metrics.',
+                   default=None)
 cmdline.add_option('--parser-help', action='store_true',
-                    help='Print usage and options for the selected parser')
+                   help='Print usage and options for the selected parser')
 cmdline.add_option('--parser-options', action='store',
-                    help='Options to pass to the logster parser such as "-o VALUE --option2 VALUE". These are parser-specific and passed directly to the parser.')
+                   help='Options to pass to the logster parser such as "-o VALUE --option2 VALUE". These are parser-specific and passed directly to the parser.')
 cmdline.add_option('--state-dir', '-s', action='store', default=state_dir,
-                    help='Where to store the tailer state file.  Default location %s' % state_dir)
+                   help='Where to store the tailer state file.  Default location %s' % state_dir)
 cmdline.add_option('--log-dir', '-l', action='store', default=log_dir,
-                    help='Where to store the logster logfile.  Default location %s' % log_dir)
+                   help='Where to store the logster logfile.  Default location %s' % log_dir)
 cmdline.add_option('--log-conf', action='store', default=None,
-                    help='Logging configuration file. None by default')
-cmdline.add_option('--output', '-o', action='callback', callback=load_output_klass, type="string", dest="output", metavar="OUTPUT",
+                   help='Logging configuration file. None by default')
+cmdline.add_option('--output', '-o', action='callback', callback=load_output_klass, type="string", dest="output",
+                   metavar="OUTPUT",
                    help="Where to send metrics (can specify multiple times).\
                          Choices are %s or a fully qualified Python class name" % ', '.join(builtin_outputs.keys()))
 cmdline.add_option('--dry-run', '-d', action='store_true', default=False,
-                    help='Parse the log file but send stats to standard output.')
+                   help='Parse the log file but send stats to standard output.')
 cmdline.add_option('--debug', '-D', action='store_true', default=False,
-                    help='Provide more verbose logging for debugging.')
+                   help='Provide more verbose logging for debugging.')
+cmdline.add_option('--log-event-string', '-e', action='store', dest="event", default='ERROR',
+                   help='Event on which we call output (Print stdout or send mail)')
 options, arguments = parse_args(cmdline)
 
 if options.parser_help:
@@ -155,15 +159,18 @@ if (len(arguments) != 2):
 
 if options.tailer == 'pygtail':
     from logster.tailers.pygtailtailer import PygtailTailer
+
     tailer_klass = PygtailTailer
 else:
     tailer_klass = LogtailTailer
 
 if options.locker == 'portalocker':
     import portalocker
+
     lock_exception_klass = portalocker.LockException
 else:
     import fcntl
+
     lock_exception_klass = IOError
 
 if not (hasattr(options, 'output') and len(options.output) > 0):
@@ -174,10 +181,9 @@ parser_klass_name = arguments[0]
 if parser_klass_name.find('.') == -1:
     # If it's a single name, find it in the base logster package
     parser_klass_name = 'logster.parsers.%s.%s' % (parser_klass_name, parser_klass_name)
-log_file   = arguments[1]
-state_dir  = options.state_dir
-log_dir    = options.log_dir
-
+log_file = arguments[1]
+state_dir = options.state_dir
+log_dir = options.log_dir
 
 # Logging infrastructure for use throughout the script.
 # Uses appending log file, rotated at 100 MB, keeping 5.
@@ -188,10 +194,10 @@ formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
 hdlr = logging.handlers.RotatingFileHandler('%s/logster.log' % log_dir, 'a', 100 * 1024 * 1024, 5)
 hdlr.setFormatter(formatter)
 logger.addHandler(hdlr)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 if (options.log_conf):
-     logging.config.fileConfig(options.log_conf)
+    logging.config.fileConfig(options.log_conf)
 
 if (options.debug):
     logger.setLevel(logging.DEBUG)
@@ -199,12 +205,13 @@ if (options.debug):
 if (not os.path.isdir(state_dir)):
     os.mkdir(state_dir)
 
-
 ## This provides a lineno() function to make it easy to grab the line
 ## number that we're on (for logging)
 ## Danny Yoo (dyoo@hkn.eecs.berkeley.edu)
 ## taken from http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/145297
 import inspect
+
+
 def lineno():
     """Returns the current line number in our program."""
     return inspect.currentframe().f_back.f_lineno
@@ -242,9 +249,9 @@ def end_locking(lockfile_fd, lockfile_name):
     """ Release a lock via a provided file descriptor. """
     try:
         if options.locker == 'portalocker':
-            portalocker.unlock(lockfile_fd) # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
+            portalocker.unlock(lockfile_fd)  # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
         else:
-            if platform.system() == "SunOS": # GH issue #17
+            if platform.system() == "SunOS":  # GH issue #17
                 fcntl.flock(lockfile_fd, fcntl.LOCK_UN)
             else:
                 fcntl.flock(lockfile_fd, fcntl.LOCK_UN | fcntl.LOCK_NB)
@@ -262,9 +269,9 @@ def end_locking(lockfile_fd, lockfile_name):
 
 
 def main():
-    dirsafe_logfile = log_file.replace('/','-')
+    dirsafe_logfile = log_file.replace('/', '-')
     state_file = '%s/%s-%s%s.state' % (state_dir, tailer_klass.short_name, parser_klass_name, dirsafe_logfile)
-    lock_file  = '%s/%s-%s%s.lock' % (state_dir, tailer_klass.short_name, parser_klass_name, dirsafe_logfile)
+    lock_file = '%s/%s-%s%s.lock' % (state_dir, tailer_klass.short_name, parser_klass_name, dirsafe_logfile)
     tailer = tailer_klass(log_file, state_file, options, logger)
 
     logger.info("Executing parser %s on logfile %s" % (parser_klass_name, log_file))
@@ -278,13 +285,15 @@ def main():
     # Instantiate output classes
     outputs = [output_klass(cmdline, options, logger) for output_klass in options.output]
 
+    loop = asyncio.get_event_loop()
+
     # Check for lock file so we don't run multiple copies of the same parser
     # simultaneuosly. This will happen if the log parsing takes more time than
     # the cron period.
     try:
         lockfile = start_locking(lock_file)
     except LockingError as e:
-        logger.warning(str(e))
+        logger.error(str(e))
         sys.exit(1)
 
     # Get input to parse.
@@ -296,27 +305,15 @@ def main():
         # find any new lines (and thus won't update the statefile).
         try:
             state_file_age = os.stat(state_file)[stat.ST_MTIME]
-
-            # Calculate now() - state file age to determine check duration.
-            duration = floor(time()) - floor(state_file_age)
-            logger.debug("Setting duration to %s seconds." % duration)
-
         except OSError as e:
             logger.info('Writing new state file and exiting. (Was either first run, or state file went missing.)')
             tailer.create_statefile()
-            end_locking(lockfile, lock_file)
-            sys.exit(0)
 
-        # Parse each line from input, then send all stats to their collectors.
-        for line in tailer.ireadlines():
-            print('In main - reading', line)
-            try:
-                parser.parse_line(line)
-            except LogsterParsingException as e:
-                # This should only catch recoverable exceptions (of which there
-                # aren't any at the moment).
-                logger.debug("Parsing exception caught at %s: %s" % (lineno(), e))
+        loop.run_until_complete(asyncio.wait([tail_log_file(tailer, parser, outputs)]))
 
+        # Calculate now() - state file age to determine check duration.
+        duration = floor(time()) - floor(state_file_age)
+        logger.debug("Setting duration to %s seconds." % duration)
         submit_stats(parser, duration, outputs)
 
     except SystemExit as e:
@@ -344,6 +341,25 @@ def main():
     except Exception as e:
         pass
 
+    loop.close()
+
+
+def tail_log_file(tailer, parser, outputs):
+    while True:
+        # Parse each line from input, then send all stats to their collectors.
+        for line in tailer.ireadlines():
+            try:
+                parser.parse_line(line)
+                if hasattr(parser, options.event) and getattr(parser, options.event) > 0:
+                    setattr(parser, options.event, 0)
+                    for output in outputs:
+                        output.submit(parser.get_log_history())
+                    yield from asyncio.sleep(10.0)
+            except LogsterParsingException as e:
+                # This should only catch recoverable exceptions (of which there
+                # aren't any at the moment).
+                logger.debug("Parsing exception caught at %s: %s" % (lineno(), e))
+
+
 if __name__ == '__main__':
     main()
-

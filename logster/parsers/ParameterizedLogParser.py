@@ -9,13 +9,15 @@
 #
 # Note:
 #     - WARN,ERROR,FATAL is default log level tracked
-#     - \[(?P<date>[0-9-_\-\.]+)\s(?P<time>[0-9-_:\.]+,\d{3})\]\[(?P<module>.*)\]\[(?P<log_level>WARN|ERROR|FATAL)\]
+#     - \[(?P<date>[0-9-_\-\.]+)\s(?P<time>[0-9-_:\.]+,\d{3})\]\[(?P<module>.*)\]\[(?P<log_level>WARNING|ERROR|FATAL)\]
 #        is the default regular expression
 #
 
 import time
 import re
 import optparse
+
+import collections
 
 from logster.logster_helper import MetricObject, LogsterParser
 from logster.logster_helper import LogsterParsingException
@@ -32,16 +34,19 @@ class ParameterizedLogParser(LogsterParser):
             options = []
         
         optparser = optparse.OptionParser()
-        optparser.add_option('--log-levels', '-l', dest='levels', default='WARN,ERROR,FATAL',
-                            help='Comma-separated list of log levels to track: (default: "WARN,ERROR,FATAL")')
+        optparser.add_option('--max-length', '-m', dest='history_maxlen', type="int", default=100,
+                             help='Number of historic lines to keep track of when tailing the log')
+        optparser.add_option('--log-levels', '-l', dest='levels', default='WARNING,ERROR,FATAL',
+                            help='Comma-separated list of log levels to track: (default: "ERROR")')
         optparser.add_option('--log-regex', '-r', dest='regex', action="store", default='\[(?P<date>[0-9-_\-\.]+) (?P<time>[0-9-_:\.]+,\d{3})\]\[(?P<module>.*)\]\[(?P<log_level>%s)\]' % ('|'.join(['WARN', 'ERROR', 'FATAL'])),
-                            help='RegEx for reading log file events: (default: "\[(?P<date>[0-9-_\-\.]+) (?P<time>[0-9-_:\.]+,\d{3})\]\[(?P<module>.*)\]\[(?P<log_level>%s)\]")')
+                            help='RegEx for reading log file events: (default: "\[(?P<date>[0-9-_\-\.]+) (?P<time>[0-9-_:\.]+,\d{3})\]\[(?P<module>.*)\]\[(?P<log_level>WARNING|ERROR|FATAL)\]")')
         
         opts, args = optparser.parse_args(args=options)
 
         self.levels = opts.levels.split(',')
         self.regex = opts.regex
-        
+        self.log_history = collections.deque(maxlen=opts.history_maxlen)
+
         for level in self.levels:
             # Track counts from 0 for each log level
             setattr(self, level, 0)
@@ -49,11 +54,11 @@ class ParameterizedLogParser(LogsterParser):
         # Regular expression for matching lines we are interested in, and capturing
         # fields from the line (in this case, a log level such as WARN, ERROR, or FATAL).
         self.reg = re.compile(self.regex)
-        
-        
+
     def parse_line(self, line):
         '''This function should digest the contents of one line at a time, updating
         object's state variables. Takes a single argument, the line to be parsed.'''
+        self.log_history.append(line)
         try:
             # Apply regular expression to each line and extract interesting bits.
             regMatch = self.reg.match(line)
@@ -64,7 +69,6 @@ class ParameterizedLogParser(LogsterParser):
                 if log_level in self.levels:
                     current_val = getattr(self, log_level)
                     setattr(self, log_level, current_val+1)
-                    
             else:
                 raise LogsterParsingException("regmatch failed to match")
                 
@@ -79,3 +83,6 @@ class ParameterizedLogParser(LogsterParser):
         
         metrics = [MetricObject(level, (getattr(self, level))) for level in self.levels]
         return metrics
+
+    def get_log_history(self):
+        return self.log_history
