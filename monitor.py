@@ -282,7 +282,7 @@ def main():
     loop.close()
 
 
-def tail_log_file(state_file_age, tailer, parser, outputs, lockfile, lock_file):
+def tail_log_file(state_file_age, tailer, parser, outputs):
     while True:
         # Parse each line from input, then send all stats to their collectors.
         for line in tailer.ireadlines():
