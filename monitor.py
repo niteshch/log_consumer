@@ -55,8 +55,6 @@ from time import time
 from math import floor
 
 # Local dependencies
-import signal
-
 from logster.logster_helper import LogsterParsingException, LockingError, LogsterOutput
 from logster.tailers.logtailtailer import LogtailTailer
 from logster.outputs.builtin import builtin_outputs
@@ -247,24 +245,24 @@ def start_locking(lockfile_name):
     return f
 
 
-def end_locking(signal, frame, lockfile, lock_file):
+def end_locking(lockfile_fd, lockfile_name):
     """ Release a lock via a provided file descriptor. """
     try:
         if options.locker == 'portalocker':
-            portalocker.unlock(lockfile)  # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
+            portalocker.unlock(lockfile_fd)  # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
         else:
             if platform.system() == "SunOS":  # GH issue #17
-                fcntl.flock(lockfile, fcntl.LOCK_UN)
+                fcntl.flock(lockfile_fd, fcntl.LOCK_UN)
             else:
-                fcntl.flock(lockfile, fcntl.LOCK_UN | fcntl.LOCK_NB)
+                fcntl.flock(lockfile_fd, fcntl.LOCK_UN | fcntl.LOCK_NB)
     except lock_exception_klass:
-        raise LockingError("Cannot release logster lock (%s)" % lock_file)
+        raise LockingError("Cannot release logster lock (%s)" % lockfile_name)
 
     try:
-        lockfile.close()
-        os.unlink(lock_file)
+        lockfile_fd.close()
+        os.unlink(lockfile_name)
     except OSError as e:
-        raise LockingError("Cannot unlink %s" % lock_file)
+        raise LockingError("Cannot unlink %s" % lockfile_name)
 
     logger.debug("Unlocking successful")
     return
@@ -298,8 +296,6 @@ def main():
         logger.error(str(e))
         sys.exit(1)
 
-    signal.signal(signal.SIGINT, end_locking(lockfile=lockfile, lock_file=lock_file))
-
     # Get input to parse.
     try:
 
@@ -315,7 +311,9 @@ def main():
             state_file_age = time()
 
         loop.run_until_complete(asyncio.wait([tail_log_file(state_file_age=state_file_age,
-                                                            tailer=tailer, parser=parser, outputs=outputs)]))
+                                                            tailer=tailer, parser=parser,
+                                                            outputs=outputs, lockfile=lockfile,
+                                                            lock_file=lock_file)]))
 
         # Calculate now() - state file age to determine check duration.
         duration = floor(time()) - floor(state_file_age)
@@ -327,7 +325,7 @@ def main():
     except Exception as e:
         print("Exception caught at %s: %s" % (lineno(), e))
         traceback.print_exc()
-        end_locking(lockfile=lockfile, lock_file=lock_file)
+        end_locking(lockfile, lock_file)
         sys.exit(1)
 
     # Log the execution time
@@ -339,34 +337,37 @@ def main():
     # log entries.
     os.utime(state_file, (floor(script_start_time), floor(script_start_time)))
 
-    end_locking(lockfile=lockfile, lock_file=lock_file)
+    end_locking(lockfile, lock_file)
 
     # try and remove the lockfile one last time, but it's a valid state that it's already been removed.
     try:
-        end_locking(lockfile=lockfile, lock_file=lock_file)
+        end_locking(lockfile, lock_file)
     except Exception as e:
         pass
 
     loop.close()
 
 
-def tail_log_file(state_file_age, tailer, parser, outputs):
+def tail_log_file(state_file_age, tailer, parser, outputs, lockfile, lock_file):
     while True:
-        # Parse each line from input, then send all stats to their collectors.
-        for line in tailer.ireadlines():
-            try:
-                parser.parse_line(line)
-                if hasattr(parser, options.event) and \
-                        hasattr(parser, 'is_event') and \
-                        getattr(parser, 'is_event'):
-                    setattr(parser, 'is_event', False)
-                    for output in outputs:
-                        output.submit(format_msg(state_file_age=state_file_age, parser=parser))
-                    yield from asyncio.sleep(10.0)
-            except LogsterParsingException as e:
-                # This should only catch recoverable exceptions (of which there
-                # aren't any at the moment).
-                logger.debug("Parsing exception caught at %s: %s" % (lineno(), e))
+        try:
+            # Parse each line from input, then send all stats to their collectors.
+            for line in tailer.ireadlines():
+                try:
+                    parser.parse_line(line)
+                    if hasattr(parser, options.event) and \
+                            hasattr(parser, 'is_event') and \
+                            getattr(parser, 'is_event'):
+                        setattr(parser, 'is_event', False)
+                        for output in outputs:
+                            output.submit(format_msg(state_file_age=state_file_age, parser=parser))
+                        yield from asyncio.sleep(10.0)
+                except LogsterParsingException as e:
+                    # This should only catch recoverable exceptions (of which there
+                    # aren't any at the moment).
+                    logger.debug("Parsing exception caught at %s: %s" % (lineno(), e))
+        except KeyboardInterrupt:
+            end_locking(lockfile, lock_file)
 
 
 def format_msg(state_file_age, parser):
