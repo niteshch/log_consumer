@@ -308,6 +308,7 @@ def main():
         except OSError as e:
             logger.info('Writing new state file and exiting. (Was either first run, or state file went missing.)')
             tailer.create_statefile()
+            state_file_age = os.stat(state_file)[stat.ST_MTIME]
 
         loop.run_until_complete(asyncio.wait([tail_log_file(state_file_age=state_file_age,
                                                             tailer=tailer, parser=parser, outputs=outputs)]))
