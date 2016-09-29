@@ -55,6 +55,8 @@ from time import time
 from math import floor
 
 # Local dependencies
+import signal
+
 from logster.logster_helper import LogsterParsingException, LockingError, LogsterOutput
 from logster.tailers.logtailtailer import LogtailTailer
 from logster.outputs.builtin import builtin_outputs
@@ -295,6 +297,8 @@ def main():
     except LockingError as e:
         logger.error(str(e))
         sys.exit(1)
+
+    signal.signal(signal.SIGINT, end_locking(lockfile, lock_file))
 
     # Get input to parse.
     try:
