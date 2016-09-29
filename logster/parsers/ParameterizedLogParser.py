@@ -46,6 +46,7 @@ class ParameterizedLogParser(LogsterParser):
         self.levels = opts.levels.split(',')
         self.regex = opts.regex
         self.log_history = collections.deque(maxlen=opts.history_maxlen)
+        self.is_event = False
 
         for level in self.levels:
             # Track counts from 0 for each log level
@@ -65,7 +66,8 @@ class ParameterizedLogParser(LogsterParser):
             if regMatch:
                 linebits = regMatch.groupdict()
                 log_level = linebits['log_level']
-                
+                if 'ERROR' in log_level:
+                    self.is_event = True
                 if log_level in self.levels:
                     current_val = getattr(self, log_level)
                     setattr(self, log_level, current_val+1)
