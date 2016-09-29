@@ -247,24 +247,24 @@ def start_locking(lockfile_name):
     return f
 
 
-def end_locking(signal, frame, lockfile_fd, lockfile_name):
+def end_locking(signal, frame, lockfile, lock_file):
     """ Release a lock via a provided file descriptor. """
     try:
         if options.locker == 'portalocker':
-            portalocker.unlock(lockfile_fd)  # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
+            portalocker.unlock(lockfile)  # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
         else:
             if platform.system() == "SunOS":  # GH issue #17
-                fcntl.flock(lockfile_fd, fcntl.LOCK_UN)
+                fcntl.flock(lockfile, fcntl.LOCK_UN)
             else:
-                fcntl.flock(lockfile_fd, fcntl.LOCK_UN | fcntl.LOCK_NB)
+                fcntl.flock(lockfile, fcntl.LOCK_UN | fcntl.LOCK_NB)
     except lock_exception_klass:
-        raise LockingError("Cannot release logster lock (%s)" % lockfile_name)
+        raise LockingError("Cannot release logster lock (%s)" % lock_file)
 
     try:
-        lockfile_fd.close()
-        os.unlink(lockfile_name)
+        lockfile.close()
+        os.unlink(lock_file)
     except OSError as e:
-        raise LockingError("Cannot unlink %s" % lockfile_name)
+        raise LockingError("Cannot unlink %s" % lock_file)
 
     logger.debug("Unlocking successful")
     return
