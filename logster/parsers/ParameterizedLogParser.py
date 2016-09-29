@@ -37,7 +37,7 @@ class ParameterizedLogParser(LogsterParser):
         optparser.add_option('--max-length', '-m', dest='history_maxlen', type="int", default=100,
                              help='Number of historic lines to keep track of when tailing the log')
         optparser.add_option('--log-levels', '-l', dest='levels', default='WARNING,ERROR,FATAL',
-                            help='Comma-separated list of log levels to track: (default: "ERROR")')
+                            help='Comma-separated list of log levels to track: (default: "WARNING,ERROR,FATAL")')
         optparser.add_option('--log-regex', '-r', dest='regex', action="store", default='\[(?P<date>[0-9-_\-\.]+) (?P<time>[0-9-_:\.]+,\d{3})\]\[(?P<module>.*)\]\[(?P<log_level>%s)\]' % ('|'.join(['WARN', 'ERROR', 'FATAL'])),
                             help='RegEx for reading log file events: (default: "\[(?P<date>[0-9-_\-\.]+) (?P<time>[0-9-_:\.]+,\d{3})\]\[(?P<module>.*)\]\[(?P<log_level>WARNING|ERROR|FATAL)\]")')
         

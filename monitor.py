@@ -147,7 +147,7 @@ cmdline.add_option('--dry-run', '-d', action='store_true', default=False,
 cmdline.add_option('--debug', '-D', action='store_true', default=False,
                    help='Provide more verbose logging for debugging.')
 cmdline.add_option('--log-event-string', '-e', action='store', dest="event", default='ERROR',
-                   help='Event on which we call output (Print stdout or send mail)')
+                   help='Event on which we call output (Print stdout or send mail). Default is "ERROR"')
 options, arguments = parse_args(cmdline)
 
 if options.parser_help:

@@ -7,11 +7,9 @@ except ImportError:
 
 
 setup(
-    name='logster',
+    name='monitor',
     version='1.0.1',
     description='Parse log files, generate metrics for Graphite and Ganglia',
-    author='Etsy',
-    url='https://github.com/etsy/logster',
     packages=[
         'logster',
         'logster/parsers',
@@ -23,7 +21,7 @@ setup(
     ],
     zip_safe=False,
     scripts=[
-        'bin/logster'
+        'monitor'
     ],
     license='GPL3',
 )
