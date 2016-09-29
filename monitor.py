@@ -247,7 +247,7 @@ def start_locking(lockfile_name):
     return f
 
 
-def end_locking(lockfile_fd, lockfile_name):
+def end_locking(signal, frame, lockfile_fd, lockfile_name):
     """ Release a lock via a provided file descriptor. """
     try:
         if options.locker == 'portalocker':
@@ -298,7 +298,7 @@ def main():
         logger.error(str(e))
         sys.exit(1)
 
-    signal.signal(signal.SIGINT, end_locking(lockfile, lock_file))
+    signal.signal(signal.SIGINT, end_locking(lockfile=lockfile, lock_file=lock_file))
 
     # Get input to parse.
     try:
@@ -327,7 +327,7 @@ def main():
     except Exception as e:
         print("Exception caught at %s: %s" % (lineno(), e))
         traceback.print_exc()
-        end_locking(lockfile, lock_file)
+        end_locking(lockfile=lockfile, lock_file=lock_file)
         sys.exit(1)
 
     # Log the execution time
@@ -339,11 +339,11 @@ def main():
     # log entries.
     os.utime(state_file, (floor(script_start_time), floor(script_start_time)))
 
-    end_locking(lockfile, lock_file)
+    end_locking(lockfile=lockfile, lock_file=lock_file)
 
     # try and remove the lockfile one last time, but it's a valid state that it's already been removed.
     try:
-        end_locking(lockfile, lock_file)
+        end_locking(lockfile=lockfile, lock_file=lock_file)
     except Exception as e:
         pass
 
